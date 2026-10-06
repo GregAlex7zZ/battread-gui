@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "battread-gui"
+version = "0.1.0"
+description = "Local Windows desktop interface for battread."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "licenses/*.txt"]
+authors = [{name = "Alessandro Gregucci"}]
+dependencies = ["battread>=0.1.0,<0.2", "PySide6>=6.8,<7", "psutil>=6,<8"]
+
+[project.optional-dependencies]
+biologic = ["battread[biologic]>=0.1.0,<0.2"]
+neware = ["battread[neware]>=0.1.0,<0.2"]
+dev = ["pytest>=8", "ruff>=0.11", "pyright[nodejs]>=1.1.400", "pandas-stubs>=2.2.3"]
+build = ["PyInstaller==6.22.3", "build>=1.2.2", "hatchling>=1.27", "editables>=0.5"]
+
+[project.gui-scripts]
+battread-gui = "battread_gui.startup:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/battread_gui"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/tools", "/README.md", "/TODO.md", "/LICENSE", "/pyproject.toml", "/run.ps1", "/launch.bat", "/packaging", "/CONTRIBUTING.md", "/AUTHORS.md", "/CHANGELOG.md", "/THIRD_PARTY_NOTICES.md", "/.gitignore", "/.gitattributes", "/.github", "/licenses", "/requirements-build.txt"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+extend-exclude = [".cache", "dist", "build", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+include = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

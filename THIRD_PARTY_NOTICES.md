@@ -40,6 +40,6 @@ References: [Qt licensing](https://doc.qt.io/qt-6/lgpl.html),
 
 The single-file launcher uses the system's Windows .NET Framework to display
 startup feedback before extraction; the framework is not redistributed here.
-The Windows ZIP remains available for users
-who want persistent, replaceable Qt libraries. Neither distribution adds
+The source package documents rebuilding the folder application with persistent,
+replaceable Qt libraries. The portable release adds no
 restrictions on modifications permitted by the bundled licenses.

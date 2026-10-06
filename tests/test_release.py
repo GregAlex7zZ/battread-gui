@@ -5,9 +5,12 @@
 
 import importlib.util
 import io
+import subprocess
 import tarfile
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 
 def release_tools() -> Any:
@@ -20,7 +23,7 @@ def release_tools() -> Any:
     return module
 
 
-def test_public_checkout_excludes_acquisitions_caches_and_local_notes(
+def test_source_staging_excludes_acquisitions_caches_and_local_notes(
     tmp_path: Path,
 ) -> None:
     """Only maintained source files are public, even when private data sits nearby."""
@@ -36,6 +39,15 @@ def test_public_checkout_excludes_acquisitions_caches_and_local_notes(
     assert (
         not {"private.csv", "demo.ipynb", "AGENTS.md", ".cache/output.txt"} & selected
     )
+    destination = tmp_path / ".cache/release-source-staging/battread-gui"
+    tool.stage_sources(tmp_path, destination)
+    copied = {
+        p.relative_to(destination).as_posix()
+        for p in destination.rglob("*")
+        if p.is_file()
+    }
+    assert copied == selected
+    assert not (tmp_path.parent / "battread-gui-github").exists()
 
 
 def test_upstream_notices_keep_bytes_and_reject_traversal_and_example_code(
@@ -62,3 +74,64 @@ def test_upstream_notices_keep_bytes_and_reject_traversal_and_example_code(
     assert (
         destination / "upstream-sources/source/LICENSES/LGPL.txt"
     ).read_bytes() == b"Synthetic original notice.\r\n"
+
+
+@pytest.mark.parametrize("build_fails", [False, True])
+def test_release_preparation_does_not_create_another_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, build_fails: bool
+) -> None:
+    """Staging cleans up after success or failure and preserves Git metadata."""
+    tool = release_tools()
+    root = tmp_path / "battread-gui"
+    root.mkdir()
+    for name in tool.ROOT_FILES:
+        (root / name).write_text("Synthetic public source.\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text('[project]\nversion="0.1.0"\n')
+    git_config = root / ".git/config"
+    git_config.parent.mkdir()
+    git_config.write_text("Synthetic local Git configuration.\n")
+    cache = root / ".cache/dependency-sources"
+    cache.mkdir(parents=True)
+    for name in (
+        "pyside-setup-everywhere-src-6.11.2.tar.xz",
+        "qtbase-everywhere-src-6.11.2.tar.xz",
+        "qtsvg-everywhere-src-6.11.2.tar.xz",
+        "galvani-0.5.0.tar.gz",
+    ):
+        (cache / name).write_bytes(b"Synthetic source archive.")
+    bundle = root / "dist/battread"
+    (bundle / "_internal").mkdir(parents=True)
+    (bundle / "battread.exe").write_bytes(b"Synthetic executable.")
+    (bundle / "_internal/battread-worker.exe").write_bytes(b"Synthetic worker.")
+    library = tmp_path / "battread"
+    library.mkdir()
+    versions = {"PySide6": "6.11.2", "galvani": "0.5.0", "battread": "0.1.0"}
+    monkeypatch.setattr(tool.metadata, "version", versions.__getitem__)
+    monkeypatch.setattr(tool, "runtime_notices", lambda *args: None)
+    build_projects: list[Path] = []
+
+    def build(command: list[str], **kwargs: object) -> None:
+        """Inspect selected sources without installing or compiling dependencies."""
+        project = Path(command[-1])
+        build_projects.append(project)
+        if project.name == "battread-gui":
+            assert project != root
+            assert not (project / ".git").exists()
+            assert not (project / ".cache").exists()
+        if build_fails:
+            raise subprocess.CalledProcessError(1, command)
+        output = Path(command[command.index("--outdir") + 1])
+        name = "battread_gui" if project.name == "battread-gui" else "battread"
+        (output / f"{name}-0.1.0.tar.gz").write_bytes(b"Synthetic built source.")
+
+    monkeypatch.setattr(tool.subprocess, "run", build)
+    if build_fails:
+        with pytest.raises(subprocess.CalledProcessError):
+            tool.prepare(root, library)
+    else:
+        assert tool.prepare(root, library) == root
+        assert build_projects[-1] == library
+        assert not list((root / "dist").glob("*-windows-x64.zip"))
+    assert not list((root / ".cache").glob("release-source-*"))
+    assert not (tmp_path / "battread-gui-github").exists()
+    assert git_config.read_text() == "Synthetic local Git configuration.\n"

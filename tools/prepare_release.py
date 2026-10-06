@@ -4,7 +4,7 @@
 """Prepare reviewed source and Windows release assets without uploading anything.
 
 Run after build_windows.py with exact upstream source archives in the private
-dependency-sources cache. The source checkout uses an explicit allowlist. Binary
+dependency-sources cache. Source archives use an explicit allowlist. Binary
 assets, runtime notices and corresponding source packages belong in Releases,
 not in Git. No workspace acquisitions or saved notebook outputs are selected.
 """
@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import tomllib
 import zipfile
 from pathlib import Path
@@ -180,12 +181,24 @@ def zip_tree(source: Path, destination: Path) -> None:
                 archive.write(path, source.name / path.relative_to(source))
 
 
-def prepare(root: Path, library_source: Path) -> Path:
-    """Create the public checkout and matching release assets, preserving private work.
+def stage_sources(root: Path, destination: Path) -> None:
+    """Stage reviewed sources without creating a second working checkout.
 
-    Existing public files are updated only from the explicit source allowlist.
-    An existing checkout may contain .git metadata, but unexpected files fail
-    rather than being removed. The caller must review and upload the result.
+    The caller supplies a temporary directory and owns its cleanup. Git metadata,
+    environments, caches and private acquisitions are never selected.
+    """
+    for path in public_files(root):
+        target = destination / path.relative_to(root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, target)
+
+
+def prepare(root: Path, library_source: Path) -> Path:
+    """Build release assets from the working repositories, preserving private work.
+
+    GUI sources are staged through the explicit allowlist in a temporary cache
+    directory. No permanent second checkout is created or synchronized. The
+    library uses its own source-distribution allowlist. Nothing is uploaded.
     """
     version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
         "project"
@@ -207,23 +220,6 @@ def prepare(root: Path, library_source: Path) -> Path:
         or not (bundle / "_internal/battread-worker.exe").is_file()
     ):
         raise FileNotFoundError("Build the Windows application first.")
-    files = public_files(root)
-    public = root.parent / "battread-gui-github"
-    allowed = {path.relative_to(root) for path in files}
-    if public.exists():
-        for path in public.rglob("*"):
-            if (
-                path.is_file()
-                and ".git" not in path.relative_to(public).parts
-                and path.relative_to(public) not in allowed
-            ):
-                raise ValueError(
-                    "Unexpected file in the public checkout; review it first."
-                )
-    for path in files:
-        target = public / path.relative_to(root)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
     runtime_notices(root, bundle, archives)
     (bundle / "README.md").write_text(
         "# battread GUI\n\nExtract the complete folder and run battread.exe. "
@@ -234,20 +230,25 @@ def prepare(root: Path, library_source: Path) -> Path:
         encoding="utf-8",
     )
     dist = root / "dist"
-    for project in (public, library_source):
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "build",
-                "--sdist",
-                "--no-isolation",
-                "--outdir",
-                str(dist),
-                str(project),
-            ],
-            check=True,
-        )
+    with tempfile.TemporaryDirectory(
+        prefix="release-source-", dir=root / ".cache"
+    ) as temporary:
+        staged = Path(temporary) / "battread-gui"
+        stage_sources(root, staged)
+        for project in (staged, library_source):
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "build",
+                    "--sdist",
+                    "--no-isolation",
+                    "--outdir",
+                    str(dist),
+                    str(project),
+                ],
+                check=True,
+            )
     library_version = metadata.version("battread")
     dependency_zip = dist / f"battread-gui-{version}-dependency-sources.zip"
     with zipfile.ZipFile(dependency_zip, "w", zipfile.ZIP_STORED) as archive:
@@ -257,7 +258,7 @@ def prepare(root: Path, library_source: Path) -> Path:
         "# Matching source packages\n\n"
         f"This release uses battread-gui {version} "
         f"and battread {library_version}.\n"
-        "Publish these source assets beside the ZIP:\n\n"
+        "Publish these source assets beside the portable executable:\n\n"
         f"- battread_gui-{version}.tar.gz: app source and build recipes.\n"
         f"- battread-{library_version}.tar.gz: library source and notices.\n"
         f"- {dependency_zip.name}: exact unmodified Qt/PySide/Galvani sources.\n\n"
@@ -269,10 +270,7 @@ def prepare(root: Path, library_source: Path) -> Path:
         "and license texts in the source archives.\n",
         encoding="utf-8",
     )
-    windows_zip = dist / f"battread-gui-{version}-windows-x64.zip"
-    zip_tree(bundle, windows_zip)
     assets = [
-        windows_zip,
         dependency_zip,
         dist / f"battread_gui-{version}.tar.gz",
         dist / f"battread-{library_version}.tar.gz",
@@ -286,7 +284,7 @@ def prepare(root: Path, library_source: Path) -> Path:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         lines.append(f"{digest}  {path.name}")
     (dist / "SHA256SUMS.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return public
+    return root
 
 
 def main() -> None:
@@ -295,8 +293,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--library-source", type=Path, default=root.parent / "battread")
     args = parser.parse_args()
-    public = prepare(root, args.library_source.resolve())
-    print(f"Public source checkout: {public}")
+    repository = prepare(root, args.library_source.resolve())
+    print(f"Source repository: {repository}")
     print(f"Release assets: {root / 'dist'}")
 
 

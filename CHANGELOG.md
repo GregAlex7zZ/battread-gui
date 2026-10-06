@@ -10,4 +10,5 @@
   bundled license/source information.
 - Added a single-file Windows download with a grayscale extraction-time splash.
 - The portable launcher cleans extracted libraries on normal exit; the folder
-  ZIP remains available as an alternative.
+  build remains a local development intermediate.
+- Release preparation uses temporary source staging instead of a second checkout.

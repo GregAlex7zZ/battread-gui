@@ -13,9 +13,8 @@ The app works locally and uploads no files.
 
 The portable launcher uses the .NET Framework included with Windows 10/11.
 
-Alternatively, extract the Windows ZIP and open `battread.exe`. Keep `_internal`
-beside it. This version avoids extraction on each launch and allows replacement
-of compatible Qt DLLs, including modified builds.
+The release includes one Windows executable. Its matching source packages and
+build instructions are available for rebuilding, including with modified Qt DLLs.
 
 1. Choose **Add files**.
 2. Leave files separate, or enable **Merge files** and choose their order.

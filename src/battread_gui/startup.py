@@ -15,6 +15,7 @@ import os
 import sys
 import threading
 from ctypes import wintypes
+from pathlib import Path
 from typing import Any
 
 
@@ -152,9 +153,16 @@ def show_startup_error(error: Exception) -> None:
 
 
 def main() -> None:
-    """Show early feedback, initialize Qt, then replace it with the main window."""
+    """Show early feedback, initialize Qt, then replace it with the main window.
+
+    A portable launcher supplies BATTREAD_STARTUP_READY while its initial
+    notice is visible. In that case avoid a second notice and acknowledge the
+    painted window through the marker before entering the Qt event loop.
+    """
     indicator = StartupIndicator()
-    indicator.start()
+    ready_marker = os.environ.pop("BATTREAD_STARTUP_READY", None)
+    if ready_marker is None:
+        indicator.start()
     try:
         from PySide6.QtWidgets import QApplication
 
@@ -165,6 +173,8 @@ def main() -> None:
         window = MainWindow()
         window.show()
         app.processEvents()
+        if ready_marker is not None:
+            Path(ready_marker).touch()
     except Exception as error:
         indicator.close()
         show_startup_error(error)

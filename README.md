@@ -5,9 +5,17 @@ A Windows desktop app for converting local electrochemical cycling files with
 
 ## Use the Windows app
 
-Download the Windows ZIP from Releases, extract the whole folder, and open
-`battread.exe`. Python is not required. Keep `_internal` beside the executable.
+Download the **portable EXE** from Releases and open it. No installation or
+Python is required. A "Starting battread..." panel appears while the app extracts
+its libraries into a temporary folder. They are removed on normal exit. Allow
+enough space on the temporary drive; startup speed depends on disk and antivirus.
 The app works locally and uploads no files.
+
+The portable launcher uses the .NET Framework included with Windows 10/11.
+
+Alternatively, extract the Windows ZIP and open `battread.exe`. Keep `_internal`
+beside it. This version avoids extraction on each launch and allows replacement
+of compatible Qt DLLs, including modified builds.
 
 1. Choose **Add files**.
 2. Leave files separate, or enable **Merge files** and choose their order.

@@ -8,3 +8,6 @@
 - Current bounded MPR reader and explicit Ewe/V selection through battread.
 - Windows portable package with startup feedback, original grayscale icon and
   bundled license/source information.
+- Added a single-file Windows download with a grayscale extraction-time splash.
+- The portable launcher cleans extracted libraries on normal exit; the folder
+  ZIP remains available as an alternative.

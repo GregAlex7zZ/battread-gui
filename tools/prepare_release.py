@@ -64,6 +64,7 @@ def public_files(root: Path) -> list[Path]:
         "tools/*.py",
         "packaging/*.py",
         "packaging/*.spec",
+        "packaging/*.cs",
         "packaging/*.md",
         "packaging/version_info.txt",
         ".github/workflows/*.yml",
@@ -276,6 +277,9 @@ def prepare(root: Path, library_source: Path) -> Path:
         dist / f"battread_gui-{version}.tar.gz",
         dist / f"battread-{library_version}.tar.gz",
     ]
+    portable = dist / f"battread-gui-{version}-windows-x64-portable.exe"
+    if portable.is_file():
+        assets.append(portable)
     lines = []
     for path in assets:
         with path.open("rb") as stream:

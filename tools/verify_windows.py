@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import suppress
 from ctypes import wintypes
 from pathlib import Path
 
@@ -216,6 +217,94 @@ def worker_workflows(bundle: Path) -> None:
             sys.frozen = original_frozen
 
 
+def portable_startup(executable: Path) -> None:
+    """Measure visible startup, test extracted workers, and verify normal cleanup.
+
+    Only windows belonging to this launcher or its descendants are touched.
+    The checks use synthetic inputs and record times, never acquisition paths.
+    """
+    import psutil
+
+    environment = os.environ.copy()
+    for name in ("PYTHONHOME", "PYTHONPATH", "QT_QPA_PLATFORM"):
+        environment.pop(name, None)
+    environment["PATH"] = str(Path(os.environ["SYSTEMROOT"]) / "System32")
+    started = time.monotonic()
+    process = subprocess.Popen([str(executable)], env=environment)
+    owner = psutil.Process(process.pid)
+    user = ctypes.WinDLL("user32")
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+    user.GetWindowThreadProcessId.argtypes = [
+        wintypes.HWND,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    user.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user.IsWindowVisible.argtypes = [wintypes.HWND]
+    user.PostMessageW.argtypes = [
+        wintypes.HWND,
+        wintypes.UINT,
+        wintypes.WPARAM,
+        wintypes.LPARAM,
+    ]
+    main_window: list[tuple[int, int]] = []
+    first_visible: float | None = None
+    main_visible: float | None = None
+    extraction: Path | None = None
+    descendants: list[psutil.Process] = []
+    pids: set[int] = set()
+
+    def visit(handle: int, data: int) -> bool:
+        """Observe splash and desktop windows owned solely by the tested launcher."""
+        nonlocal first_visible, main_visible
+        pid = wintypes.DWORD()
+        user.GetWindowThreadProcessId(handle, ctypes.byref(pid))
+        if pid.value in pids and user.IsWindowVisible(handle):
+            if first_visible is None:
+                first_visible = time.monotonic() - started
+            title = ctypes.create_unicode_buffer(256)
+            user.GetWindowTextW(handle, title, 256)
+            if title.value == "battread" and not main_window:
+                main_visible = time.monotonic() - started
+                main_window.append((handle, pid.value))
+        return True
+
+    callback = callback_type(visit)
+    try:
+        deadline = started + 120
+        while (
+            not main_window and process.poll() is None and time.monotonic() < deadline
+        ):
+            descendants = owner.children(recursive=True)
+            pids = {process.pid, *(child.pid for child in descendants)}
+            user.EnumWindows(callback, 0)
+            time.sleep(0.02)
+        assert main_window, "Portable desktop did not open."
+        assert first_visible is not None and main_visible is not None
+        assert first_visible < main_visible, "Extraction feedback was not observed."
+        desktop = psutil.Process(main_window[0][1])
+        bundle = Path(desktop.exe()).parent
+        extraction = bundle.parent
+        assert extraction.name.startswith("battread-app-")
+        assert (bundle / "_internal/battread-worker.exe").is_file()
+        worker_workflows(bundle)
+        user.PostMessageW(main_window[0][0], 0x10, 0, 0)
+        assert process.wait(timeout=30) == 0
+        assert not extraction.exists(), "Portable extraction folder was retained."
+        print(
+            f"Portable startup: feedback {first_visible:.2f}s; "
+            f"desktop {main_visible:.2f}s. Temporary extraction cleaned.",
+            flush=True,
+        )
+    finally:
+        if process.poll() is None:
+            for child in reversed(descendants):
+                with suppress(psutil.NoSuchProcess):
+                    child.kill()
+            process.kill()
+            process.wait()
+
+
 def main() -> None:
     """Verify a specific extracted bundle without publishing or keeping test data."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -224,7 +313,13 @@ def main() -> None:
         type=Path,
         default=Path(__file__).resolve().parents[1] / "dist/battread",
     )
+    parser.add_argument(
+        "--portable", type=Path, help="Verify a single-file EXE instead."
+    )
     args = parser.parse_args()
+    if args.portable is not None:
+        portable_startup(args.portable.resolve())
+        return
     bundle = args.bundle.resolve()
     window_startup(bundle)
     worker_workflows(bundle)

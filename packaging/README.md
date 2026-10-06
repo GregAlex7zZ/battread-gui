@@ -22,7 +22,17 @@ Prepare release assets with `python tools/prepare_release.py`; it requires the
 exact upstream source packages under `.cache/dependency-sources` and collects
 licenses from those sources and the installed runtime distributions.
 
-Upload the Windows ZIP, app source archive, matching battread source archive,
+Then run `python tools/build_portable.py` and `python tools/prepare_release.py`
+again to include the single-file portable EXE in the checksums and updated source
+assets. The wrapper embeds the complete reviewed folder, including licenses.
+The lightweight Windows .NET Framework launcher paints its startup notice before
+extracting the payload in a background task. It waits for a marker from the desktop
+window before closing the splash, then waits until the app exits before cleanup.
+The bundled worker remains separate inside the temporary folder; no console
+window is shown. The launcher uses the .NET Framework supplied with Windows 10/11.
+Its C# source and the build recipe are included in the app source archive.
+
+Upload the portable EXE, Windows ZIP, app source archive, matching battread source archive,
 dependency-source archive and checksum file as GitHub Release assets. Source
 code goes in the repository; executables and build caches do not. Keep matching
 source assets available for each binary release. Code signing and a separate

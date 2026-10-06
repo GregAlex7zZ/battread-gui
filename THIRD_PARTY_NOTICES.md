@@ -35,3 +35,11 @@ References: [Qt licensing](https://doc.qt.io/qt-6/lgpl.html),
 [PyInstaller exception](https://pyinstaller.org/en/stable/license.html),
 [Galvani](https://github.com/echemdata/galvani),
 [NewareNDA](https://github.com/d-cogswell/NewareNDA).
+
+## Portable launcher
+
+The single-file launcher uses the system's Windows .NET Framework to display
+startup feedback before extraction; the framework is not redistributed here.
+The Windows ZIP remains available for users
+who want persistent, replaceable Qt libraries. Neither distribution adds
+restrictions on modifications permitted by the bundled licenses.

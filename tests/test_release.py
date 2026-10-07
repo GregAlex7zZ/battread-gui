@@ -103,6 +103,10 @@ def test_release_preparation_does_not_create_another_repository(
     (bundle / "_internal").mkdir(parents=True)
     (bundle / "battread.exe").write_bytes(b"Synthetic executable.")
     (bundle / "_internal/battread-worker.exe").write_bytes(b"Synthetic worker.")
+    for package in ("battread", "battread-gui"):
+        details = bundle / "_internal" / f"{package}-0.1.0.dist-info" / "METADATA"
+        details.parent.mkdir()
+        details.write_text(f"Name: {package}\nVersion: 0.1.0\n")
     library = tmp_path / "battread"
     library.mkdir()
     versions = {"PySide6": "6.11.2", "galvani": "0.5.0", "battread": "0.1.0"}
@@ -135,3 +139,17 @@ def test_release_preparation_does_not_create_another_repository(
     assert not list((root / ".cache").glob("release-source-*"))
     assert not (tmp_path / "battread-gui-github").exists()
     assert git_config.read_text() == "Synthetic local Git configuration.\n"
+
+
+def test_release_refuses_stale_or_missing_compiled_versions(tmp_path):
+    """New source archives must not masquerade as an old compiled app release."""
+    tool = release_tools()
+    with pytest.raises(ValueError, match="Rebuild"):
+        tool.validate_bundle_versions(tmp_path, "0.1.2", "0.1.2")
+    for package in ("battread", "battread-gui"):
+        details = tmp_path / "_internal" / f"{package}-0.1.1.dist-info" / "METADATA"
+        details.parent.mkdir(parents=True)
+        details.write_text(f"Name: {package}\nVersion: 0.1.1\n")
+    with pytest.raises(ValueError, match="Rebuild"):
+        tool.validate_bundle_versions(tmp_path, "0.1.2", "0.1.2")
+    tool.validate_bundle_versions(tmp_path, "0.1.1", "0.1.1")

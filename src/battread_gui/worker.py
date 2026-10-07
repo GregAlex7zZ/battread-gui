@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import warnings
 from pathlib import Path
 from typing import IO, Any, cast
@@ -80,6 +81,29 @@ def main() -> int:
             message = f"{active_source}: {message}"
         emit({"phase": "Warning", "message": f"{category.__name__}: {message}"})
 
+    request_id = 0
+
+    def resolve(
+        source: Path, columns: dict[str, str | int], units: dict[str, str]
+    ) -> tuple[dict[str, str | int], dict[str, str]]:
+        """Wait cancellably for one explicit reply without releasing staged inputs."""
+        nonlocal request_id
+        from battread_gui.column_choices import apply_choice, choice_request
+
+        request_id += 1
+        request = choice_request(source, columns, units)
+        report_event({"phase": "Column choice", "request_id": request_id, **request})
+        reply = workspace / f"column-choice-{request_id}.json"
+        while not reply.exists():
+            check()
+            time.sleep(0.1)
+        check()
+        response = json.loads(reply.read_text(encoding="utf-8"))
+        reply.unlink()
+        if not isinstance(response, dict):
+            raise ValueError("Invalid column selection reply.")
+        return apply_choice(request, cast(dict[str, Any], response), columns, units)
+
     try:
         from battread_gui.processing import run_job
 
@@ -90,7 +114,7 @@ def main() -> int:
                 Path(parent): Path(directory)
                 for parent, directory in payload.get("output_workspaces", {}).items()
             }
-            run_job(job, workspace, report_event, check, staging or None)
+            run_job(job, workspace, report_event, check, staging or None, resolve)
     except CancelledError as error:
         emit({"phase": "Cancelled", "message": str(error)})
         return 2

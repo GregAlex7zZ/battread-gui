@@ -3,6 +3,9 @@
 A Windows desktop app for converting local electrochemical cycling files with
 [battread](https://github.com/GregAlex7zZ/battread).
 
+Current source version: **0.1.2**. Executable releases have the features of their
+release tag; source updates require rebuilding the app.
+
 ## Use the Windows app
 
 Download the **portable EXE** from Releases and open it. No installation or
@@ -25,6 +28,26 @@ Orange messages are non-blocking warnings, green messages confirm saved files,
 and red messages indicate errors. Review warnings and compare converted data
 with the original measurements. Help explains the available options.
 
+## Column choices
+
+Any CSV with both `Time` and `Total Time` uses `Total Time` automatically, with
+its declared unit, or seconds when the paired label has no unit. Vendor markers
+are not required. Time is converted to elapsed seconds starting at zero.
+
+For other ambiguous columns, processing pauses and **Choose column** shows the
+file, quantity, candidate positions, recognition evidence and a few sample
+values when available. Choose a column, confirm its **Source unit**, then click
+**Continue**. Identical labels remain distinct by their column number.
+The window stays responsive; **Cancel** stops the job. Selection applies only
+to that file in the current job; it is not saved as a future default.
+
+The worker resumes without repeating already saved files. Cancelling a merge
+publishes no incomplete combined output. If the source changes during a choice,
+restart processing. Previews are bounded, may be unavailable for binary files,
+and do not validate every measurement. No preview values are written to logs.
+Missing columns, unsupported units or unknown capacity semantics can still fail;
+a column choice is not permission to infer scientific meaning.
+
 Original files are not changed. Temporary standardized files are created in the
 output folder and cleaned after completion, cancellation or handled failures.
 A crash or power loss can leave a `.battread-work-*` folder; remove it only when
@@ -42,8 +65,9 @@ This reduces full-file memory copies; it does not guarantee a strict machine-wid
 RAM limit or universal format compatibility.
 
 For Bio-Logic, the app explicitly selects a unique `Ewe/V` when present, including
-when `<Ewe>/V` is also present. They are not assumed equivalent. Other ambiguities
-still fail. Neware CSV uses recognized Total Time, not resetting step time.
+when `<Ewe>/V` is also present. They are not assumed equivalent. Remaining
+candidate ambiguities ask for an explicit column choice. The general CSV
+paired-clock preference applies to Neware exports too.
 
 ## Run or build from source
 

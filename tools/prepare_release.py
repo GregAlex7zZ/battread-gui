@@ -19,6 +19,7 @@ import tarfile
 import tempfile
 import tomllib
 import zipfile
+from email.parser import Parser
 from pathlib import Path
 
 RUNTIME_PACKAGES = (
@@ -193,6 +194,24 @@ def stage_sources(root: Path, destination: Path) -> None:
         shutil.copyfile(path, target)
 
 
+def validate_bundle_versions(
+    bundle: Path, gui_version: str, library_version: str
+) -> None:
+    """Refuse mixing new sources with a previously compiled application release."""
+    expected = {"battread-gui": gui_version, "battread": library_version}
+    found: dict[str, list[str]] = {name: [] for name in expected}
+    for path in (bundle / "_internal").glob("*.dist-info/METADATA"):
+        details = Parser().parsestr(path.read_text(encoding="utf-8"))
+        name = str(details.get("Name", "")).casefold().replace("_", "-")
+        if name in found:
+            found[name].append(str(details.get("Version", "")))
+    if any(found[name] != [version] for name, version in expected.items()):
+        raise ValueError(
+            "The compiled application does not match current source versions. "
+            "Rebuild the Windows application before preparing a release."
+        )
+
+
 def prepare(root: Path, library_source: Path) -> Path:
     """Build release assets from the working repositories, preserving private work.
 
@@ -220,6 +239,7 @@ def prepare(root: Path, library_source: Path) -> Path:
         or not (bundle / "_internal/battread-worker.exe").is_file()
     ):
         raise FileNotFoundError("Build the Windows application first.")
+    validate_bundle_versions(bundle, version, metadata.version("battread"))
     runtime_notices(root, bundle, archives)
     (bundle / "README.md").write_text(
         "# battread GUI\n\nExtract the complete folder and run battread.exe. "

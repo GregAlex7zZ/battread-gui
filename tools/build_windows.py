@@ -11,6 +11,7 @@ specification. Keep all files in dist/battread together when distributing.
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -19,6 +20,9 @@ def main() -> None:
     if os.name != "nt":
         raise SystemExit("Build the Windows application on Windows.")
     root = Path(__file__).resolve().parents[1]
+    version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"
+    ]["version"]
     subprocess.run([sys.executable, str(root / "tools/make_icon.py")], check=True)
     subprocess.run(
         [
@@ -27,7 +31,7 @@ def main() -> None:
             "PyInstaller",
             "--noconfirm",
             "--workpath",
-            str(root / ".cache/windows-build"),
+            str(root / f".cache/windows-build-{version}"),
             str(root / "packaging/windows.spec"),
         ],
         cwd=root,

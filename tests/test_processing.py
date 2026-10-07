@@ -216,3 +216,29 @@ def test_separate_mode_keeps_completed_outputs_after_later_failure(tmp_path):
     assert battread.read(outputs[0]).equals(canonical([0, 1, 2]))
     assert not outputs[1].exists()
     assert not list(work.iterdir())
+
+
+@pytest.mark.parametrize("merge", [False, True])
+def test_neware_csv_without_step_type_uses_total_clock(tmp_path, merge):
+    """GUI processing uses total elapsed time despite step resets, also in merges."""
+    sources = []
+    for index in range(2 if merge else 1):
+        source = tmp_path / f"neware-{index}.csv"
+        source.write_text(
+            "Unnamed: 0,Unnamed: 1,DataPoint,Time,Total Time,Current(mA),Voltage(V),"
+            "Capacity(mAh),Energy(Wh),Date,Power(W),Unnamed: 11\n"
+            ",Rest,1,00:00:00,25:00:00,0,3.5,0,0,2025-01-01,0,\n"
+            ",Charge,2,00:00:01,25:00:02.5,-1,3.5,0,0,2025-01-01,0,\n"
+            ",Rest,3,00:00:00,25:00:03,2,3.5,0,0,2025-01-01,0,\n"
+        )
+        sources.append(source)
+    output = tmp_path / "converted.csv"
+    workspace = tmp_path / "work"
+    workspace.mkdir()
+    job = Job(tuple(sources), (output,), merge, "csv", 1024**3, chunk_size=1)
+    run_job(job, workspace, lambda event: None, noop)
+    result = battread.read(output)
+    expected_times = [0, 2.5, 3, 3.5, 6, 6.5] if merge else [0, 2.5, 3]
+    assert result.time_s.tolist() == expected_times
+    assert result.current_mA.tolist() == [0, -1, 2] * len(sources)
+    assert result.voltage_V.tolist() == [3.5] * (3 * len(sources))

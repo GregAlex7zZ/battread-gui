@@ -8,8 +8,10 @@ builds a launcher whose first window precedes background extraction. Only the
 licensed folder release is embedded; no workspace inputs are selected.
 """
 
+import importlib.metadata as metadata
 import os
 import subprocess
+import tomllib
 from pathlib import Path
 
 
@@ -17,12 +19,16 @@ def main() -> None:
     """Compress the reviewed app and compile its windowed single-file launcher."""
     if os.name != "nt":
         raise SystemExit("Build the Windows application on Windows.")
-    from prepare_release import zip_tree
+    from prepare_release import validate_bundle_versions, zip_tree
 
     root = Path(__file__).resolve().parents[1]
+    version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"
+    ]["version"]
     bundle = root / "dist/battread"
     if not (bundle / "SOURCES.md").is_file():
         raise SystemExit("Run build_windows.py and prepare_release.py first.")
+    validate_bundle_versions(bundle, version, metadata.version("battread"))
     compiler = (
         Path(os.environ["SYSTEMROOT"]) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
     )
@@ -43,7 +49,7 @@ def main() -> None:
             "/reference:System.IO.Compression.dll",
             f"/resource:{payload},battread_payload",
             f"/win32icon:{root / 'src/battread_gui/resources/battread.ico'}",
-            f"/out:{root / 'dist/battread-gui-0.1.0-windows-x64-portable.exe'}",
+            f"/out:{root / f'dist/battread-gui-{version}-windows-x64-portable.exe'}",
             str(root / "packaging/PortableLauncher.cs"),
         ],
         cwd=root,

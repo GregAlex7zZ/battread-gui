@@ -121,6 +121,8 @@ def window_startup(bundle: Path) -> None:
 def worker_workflows(bundle: Path) -> None:
     """Drive frozen conversion, merge, warnings, failure and cancellation via Qt."""
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    # Match the portable launcher's bounded BLAS initialization for each worker.
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
     import battread
     from PySide6.QtWidgets import QApplication
 
@@ -139,7 +141,15 @@ def worker_workflows(bundle: Path) -> None:
             prefix="battread packaged check "
         ) as temporary:
             root = Path(temporary)
-            for case in ("single", "merge", "mpr", "warning", "failure", "cancel"):
+            for case in (
+                "single",
+                "merge",
+                "mpr",
+                "neware",
+                "warning",
+                "failure",
+                "cancel",
+            ):
                 folder = root / case
                 folder.mkdir()
                 first = folder / "first.txt"
@@ -157,6 +167,16 @@ def worker_workflows(bundle: Path) -> None:
                 elif case == "mpr":
                     first = folder / "accessory.mpr"
                     synthetic_mpr(first)
+                    inputs = [first]
+                elif case == "neware":
+                    first = folder / "neware.csv"
+                    first.write_text(
+                        "Unnamed: 0,Unnamed: 1,DataPoint,Time,Total Time,Current(mA),"
+                        "Voltage(V),Capacity(mAh),Energy(Wh),Date,Power(W)\n"
+                        ",Rest,1,00:00:00,25:00:00,-2,3.5,0,0,2025-01-01,0\n"
+                        ",Rest,2,00:00:00,25:00:01.25,3,3.5,0,0,2025-01-01,0\n",
+                        encoding="utf-8",
+                    )
                     inputs = [first]
                 elif case == "warning":
                     first.write_text(
@@ -191,7 +211,9 @@ def worker_workflows(bundle: Path) -> None:
                             else "NonMonotonicTimeError" in log
                         )
                     else:
-                        assert window.saved == 1, log
+                        assert window.saved == 1, (
+                            f"{case}: {window.status.text()}\n{log}"
+                        )
                         frame = battread.read(output)
                         assert battread.is_standardized(frame)
                         if case == "merge":
@@ -203,6 +225,8 @@ def worker_workflows(bundle: Path) -> None:
                         else:
                             assert frame.current_mA.tolist() == [-2, 3]
                             assert frame.voltage_V.tolist() == [3.5, 3.5]
+                            if case == "neware":
+                                assert frame.time_s.tolist() == [0, 1.25]
                     assert not list(folder.glob(".battread-work-*"))
                     print(f"Frozen workflow passed: {case}", flush=True)
                 finally:

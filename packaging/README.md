@@ -44,3 +44,17 @@ clean-machine Windows trial remain future validation work.
 The folder build is a local packaging intermediate; do not attach its ZIP to the
 release. Users download one portable EXE. Keep source packages and checksums
 beside that executable.
+
+
+## Source updates and compiled versions
+
+Update and test both source projects before rebuilding an executable. The
+column-choice protocol requires the GUI and its worker from the same build.
+Do not mix a newer GUI with an older frozen worker. `prepare_release.py` and
+`build_portable.py` refuse bundles whose embedded GUI/library metadata versions
+do not match the current source/install versions. A source-only update therefore
+keeps the previous executable intact until an explicit rebuild is requested.
+
+Future frozen acceptance must cover a real pause, positional selection, resume,
+multiple ambiguities, cancellation and cleanup, as well as normal conversion.
+The existing source integration tests run a real Python worker for these cases.

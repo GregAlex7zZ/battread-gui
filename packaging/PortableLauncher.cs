@@ -17,8 +17,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("battread")]
 [assembly: AssemblyCompany("Alessandro Gregucci")]
 [assembly: AssemblyCopyright("Copyright 2026 Alessandro Gregucci")]
-[assembly: AssemblyVersion("0.1.0.0")]
-[assembly: AssemblyFileVersion("0.1.0.0")]
+[assembly: AssemblyVersion("0.1.2.0")]
+[assembly: AssemblyFileVersion("0.1.2.0")]
 
 /// <summary>Own the startup notice and one temporary app instance.</summary>
 internal static class PortableLauncher
@@ -96,6 +96,9 @@ internal static class PortableLauncher
             command.CreateNoWindow = true;
             command.EnvironmentVariables["BATTREAD_STARTUP_READY"] = ready;
             command.EnvironmentVariables["PYINSTALLER_RESET_ENVIRONMENT"] = "1";
+            // Conversion does not use matrix algebra; avoid per-thread BLAS buffers
+            // exhausting the processing worker's Windows memory budget at import.
+            command.EnvironmentVariables["OPENBLAS_NUM_THREADS"] = "1";
             using (Process desktop = Process.Start(command))
             {
                 if (desktop == null) throw new IOException("Could not launch the desktop app.");

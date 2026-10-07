@@ -26,10 +26,14 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa  # pyright: ignore[reportMissingTypeStubs]
 import pyarrow.parquet as pq  # pyright: ignore[reportMissingTypeStubs]
+from battread.exceptions import AmbiguousColumnError, IncompatibleDataError
 from battread.warnings import MissingValueWarning
 from numpy.typing import NDArray
 
+from battread_gui.column_choices import Selectors, Units
 from battread_gui.models import Job, OutputFormat, available_destination
+
+ColumnResolver = Callable[[Path, Selectors, Units], tuple[Selectors, Units]]
 
 # Arrow's runtime APIs have no complete typing stubs. Keep the untyped boundary
 # inside serialization; all application plans and callbacks remain typed.
@@ -181,7 +185,12 @@ class Sink(AbstractContextManager["Sink"]):
 
 
 def checked_chunks(
-    source: Path, chunk_size: int, check: Check, *, report_missing: bool = True
+    source: Path,
+    chunk_size: int,
+    check: Check,
+    *,
+    report_missing: bool = True,
+    resolve: ColumnResolver | None = None,
 ) -> Iterator[pd.DataFrame]:
     """Read chunks while optionally deferring missing-value reports to a summary.
 
@@ -192,18 +201,21 @@ def checked_chunks(
     with warnings.catch_warnings():
         if not report_missing:
             warnings.simplefilter("ignore", MissingValueWarning)
-        yield from _source_chunks(source, chunk_size, check)
+        yield from _source_chunks(source, chunk_size, check, resolve)
 
 
 def _source_chunks(
-    source: Path, chunk_size: int, check: Check
+    source: Path, chunk_size: int, check: Check, resolve: ColumnResolver | None = None
 ) -> Iterator[pd.DataFrame]:
     """Read through the public API with cancellation checks and guaranteed cleanup.
 
     Use the installed library's streaming reader and verified format definitions;
     do not duplicate vendor decoding here. Select a unique Bio-Logic Ewe/V label
     explicitly, preserving normal recognition when it is absent and failures for
-    duplicate labels. Close the source iterator on completion or cancellation.
+    duplicate labels. The optional resolver pauses only before any source rows
+    are emitted, then retries with explicit positional mappings and units.
+    Reject sources modified during the pause. Close every iterator on completion,
+    retry or cancellation.
     """
     separator: str | None = None
     if source.suffix.lower() == ".txt":
@@ -212,7 +224,7 @@ def _source_chunks(
         with source.open("rb") as stream:
             if stream.readline(128).strip() == b"time_s\tcurrent_mA\tvoltage_V":
                 separator = "\t"
-    columns: dict[str, str] = {}
+    columns: Selectors = {}
     if source.suffix.lower() in {".mpr", ".mpt"}:
         check()
         details = battread.inspect(source)
@@ -221,22 +233,43 @@ def _source_chunks(
         # labels keep normal recognition; duplicate labels still fail explicitly.
         if sum(match.source_column == "Ewe/V" for match in details.columns) == 1:
             columns["voltage"] = "Ewe/V"
-    iterator = battread.iter_read(
-        source, chunk_size=chunk_size, sep=separator, columns=columns
-    )
-    try:
-        while True:
+    units: Units = {}
+    initial_stat = source.stat()
+    emitted = False
+    while True:
+        iterator = battread.iter_read(
+            source, chunk_size=chunk_size, sep=separator, columns=columns, units=units
+        )
+        try:
+            while True:
+                check()
+                try:
+                    frame = next(iterator)
+                except StopIteration:
+                    return
+                check()
+                emitted = True
+                yield frame
+        except AmbiguousColumnError:
+            # Column selection precedes measurements. Never restart a source
+            # after emitting rows, which could duplicate a partially staged file.
+            if resolve is None or emitted:
+                raise
+            columns, units = resolve(source, columns, units)
+            current_stat = source.stat()
+            if (
+                current_stat.st_size,
+                current_stat.st_mtime_ns,
+                current_stat.st_ino,
+            ) != (initial_stat.st_size, initial_stat.st_mtime_ns, initial_stat.st_ino):
+                raise IncompatibleDataError(
+                    "Source changed during column selection. Restart processing."
+                ) from None
             check()
-            try:
-                frame = next(iterator)
-            except StopIteration:
-                break
-            check()
-            yield frame
-    finally:
-        close = getattr(iterator, "close", None)
-        if close is not None:
-            close()
+        finally:
+            close = getattr(iterator, "close", None)
+            if close is not None:
+                close()
 
 
 def run_job(
@@ -245,6 +278,7 @@ def run_job(
     notify: Notify,
     check: Check,
     output_workspaces: Mapping[Path, Path] | None = None,
+    resolve: ColumnResolver | None = None,
 ) -> None:
     """Standardize and write a validated job with bounded tabular buffers.
 
@@ -294,7 +328,7 @@ def run_job(
                 else workspace
             )
             with tempfile.TemporaryDirectory(prefix="file-", dir=root) as name:
-                run_job(single, Path(name), forward, check)
+                run_job(single, Path(name), forward, check, resolve=resolve)
         notify({"phase": "Complete", "percent": 100})
         return
     summaries: list[TimingSummary] = []
@@ -314,7 +348,7 @@ def run_job(
         )
         with Sink(stage, "parquet") as sink:
             for frame in checked_chunks(
-                source, job.chunk_size, check, report_missing=False
+                source, job.chunk_size, check, report_missing=False, resolve=resolve
             ):
                 for column in battread.CANONICAL_COLUMNS:
                     count = int(frame[column].isna().sum())

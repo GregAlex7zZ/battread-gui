@@ -5,7 +5,7 @@
 
 QProcess keeps parsing outside the GUI process. A timer observes worker memory,
 while newline-delimited events update status without blocking the event loop.
-The window never receives DataFrames or raw scientific values from its worker.
+The window receives only progress, metadata and bounded column-choice previews.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-from PySide6.QtCore import QProcess, Qt, QTimer
+from PySide6.QtCore import QProcess, QProcessEnvironment, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
     QCloseEvent,
@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from battread_gui.column_dialog import ColumnChoiceDialog
 from battread_gui.memory import MemoryGuard
 from battread_gui.models import (
     Job,
@@ -149,19 +150,26 @@ would replace an input, the displayed name adds <b>_standardized</b> to protect 
 <p>5. Click <b>Process</b>. Existing files are never overwritten. Name conflicts
 are resolved automatically as name (2).csv, name (3).csv, and so on.</p>
 <h3>Message colors</h3>
-<p><span style="color:#a65b00"><b>Orange — warning:</b></span> a non-blocking
+<p><span style="color:#a65b00"><b>Orange â€” warning:</b></span> a non-blocking
 data-quality issue. Processing continues; inspect the affected data before use.
 Missing scientific values remain missing; success does not resolve the warning.</p>
-<p><span style="color:#16723c"><b>Green — saved:</b></span> the output was saved
-successfully. <span style="color:#b42318"><b>Red — error:</b></span> processing
+<p><span style="color:#16723c"><b>Green â€” saved:</b></span> the output was saved
+successfully. <span style="color:#b42318"><b>Red â€” error:</b></span> processing
 cannot continue. Previously saved separate outputs remain available.</p>
 <p>Selected file size is measured from file metadata before processing. It is
 not a prediction of peak RAM or output/temporary disk requirements.</p>
 <h3>Scientific behavior</h3>
 <p>Outputs contain time_s, current_mA and voltage_V. Time starts at zero.
-Measured current and its sign take precedence over reconstruction. Neware CSV
-autoexports use recognized Total Time. Scientific ambiguity is an error;
-the application does not guess columns or silently remove missing rows.</p>
+Measured current and its sign take precedence over reconstruction. Every CSV
+with Time and Total Time uses Total Time; declared units are preserved and a
+bare paired Total Time means seconds. Missing rows are never silently removed.</p>
+<h3>Choose column</h3>
+<p>For remaining ambiguities, the worker pauses. Choose a candidate and its source
+unit, review the sample values and evidence, then press Continue. Column numbers
+distinguish identical labels. Cancel stops processing. A choice applies only to
+that file in this job; already saved separate files are not repeated. A changed
+source requires restarting. Binary previews may be unavailable, and choosing a
+capacity column does not establish unknown counter semantics.</p>
 <p>Merge follows the public battread.merge timing rules. If neither neighboring
 acquisition contains an adjacent positive interval, the join fails.</p>
 <h3>Progress and memory</h3>
@@ -222,6 +230,7 @@ class MainWindow(QMainWindow):
         self.reserve = 0
         self.saved = 0
         self.last_event: dict[str, Any] = {}
+        self.column_dialog: ColumnChoiceDialog | None = None
         self.close_when_done = False
         self.merge_name_custom = False
 
@@ -256,8 +265,8 @@ class MainWindow(QMainWindow):
         settings_layout.setSpacing(12)
         buttons = QVBoxLayout()
         buttons.addStretch()
-        self.up = QPushButton("↑  Move up")
-        self.down = QPushButton("↓  Move down")
+        self.up = QPushButton("â†‘  Move up")
+        self.down = QPushButton("â†“  Move down")
         self.up.clicked.connect(self.move_up)
         self.down.clicked.connect(self.move_down)
         buttons.addWidget(self.up)
@@ -315,7 +324,7 @@ class MainWindow(QMainWindow):
         self.folder = QLineEdit()
         self.folder.setPlaceholderText("Choose a folder for standardized files")
         output_row.addWidget(self.folder, 1)
-        self.browse = QPushButton("Browse…")
+        self.browse = QPushButton("Browseâ€¦")
         self.browse.clicked.connect(self.choose_folder)
         output_row.addWidget(self.browse)
         self.format_box = QComboBox()
@@ -332,7 +341,7 @@ class MainWindow(QMainWindow):
         self.table.itemChanged.connect(self.update_preview)
         layout.addWidget(self.settings, 1)
 
-        self.status = QLabel("Ready — add files to begin.")
+        self.status = QLabel("Ready â€” add files to begin.")
         self.status.setWordWrap(True)
         self.status.hide()
         layout.addWidget(self.status)
@@ -380,7 +389,7 @@ class MainWindow(QMainWindow):
         about = QTextBrowser()
         about.setOpenExternalLinks(True)
         about.setHtml(
-            "<h2>battread GUI</h2><p>Copyright © 2026 Alessandro Gregucci.</p>"
+            "<h2>battread GUI</h2><p>Copyright Â© 2026 Alessandro Gregucci.</p>"
             "<p>Licensed under GNU GPL version 3 or later, as is battread.</p>"
             '<p><a href="https://github.com/GregAlex7zZ/battread/blob/main/AUTHORS.md">'
             "Authorship</a></p>"
@@ -449,7 +458,7 @@ class MainWindow(QMainWindow):
 
     def set_remove_button(self, row: int) -> None:
         """Bind the row's X to its input identity, avoiding stale reordered indices."""
-        button = QPushButton("×")  # noqa: RUF001 - conventional close glyph.
+        button = QPushButton("Ã—")  # noqa: RUF001 - conventional close glyph.
         button.setObjectName("removeFile")
         button.setToolTip("Remove this file")
         button.setAccessibleName(f"Remove {self.paths[row].name}")
@@ -543,9 +552,9 @@ class MainWindow(QMainWindow):
             if size < 1024 or unit == "TB":
                 break
             size /= 1024
-        message = f"{len(self.paths)} file(s) · {size:.1f} {unit}"
+        message = f"{len(self.paths)} file(s) Â· {size:.1f} {unit}"
         if unavailable:
-            message += f" · size unavailable for {unavailable} file(s)"
+            message += f" Â· size unavailable for {unavailable} file(s)"
         self.size_label.setText(message)
 
     def fit_controls(self) -> None:
@@ -754,10 +763,13 @@ class MainWindow(QMainWindow):
         # free-memory amounts and prevent use of the requested percentage.
         self.reserve = max(1, job.memory_limit // 9)
         self.progress.setRange(0, 0)
-        self.status.setText("Starting worker…")
+        self.status.setText("Starting workerâ€¦")
         self.status.setStyleSheet("color: #222222;")
         self.status.show()
         executable, arguments = worker_command(self.workspace.name)
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert("OPENBLAS_NUM_THREADS", "1")
+        self.process.setProcessEnvironment(environment)
         self.process.start(executable, arguments)
         self.timer.start()
 
@@ -791,6 +803,9 @@ class MainWindow(QMainWindow):
         """Render progress and preserve warnings/errors in a bounded local log."""
         self.last_event = event
         phase = str(event.get("phase", "Processing"))
+        if phase == "Column choice":
+            self.show_column_choice(event)
+            return
         if phase in {"Warning", "Error", "Cancelled"}:
             color = "#b42318" if phase == "Error" else "#a65b00"
             self.append_message(str(event.get("message", phase)), color)
@@ -809,12 +824,56 @@ class MainWindow(QMainWindow):
         self.last_phase = phase
         detail = ""
         if "file" in event:
-            detail += f" · file {event['file']} of {event['files']}"
+            detail += f" Â· file {event['file']} of {event['files']}"
         if "rows" in event:
-            detail += f" · {int(event['rows']):,} rows"
+            detail += f" Â· {int(event['rows']):,} rows"
         if percentage is not None:
-            detail += f" · {percentage}%"
+            detail += f" Â· {percentage}%"
         self.status.setText(phase + detail)
+
+    def show_column_choice(self, event: dict[str, Any]) -> None:
+        """Open a nonblocking dialog while the worker waits in its private workspace."""
+        if self.workspace is None or self.stop_reason:
+            return
+        if self.column_dialog is not None:
+            self.stop_reason = "Overlapping column selection requests."
+            self.cancel()
+            return
+        dialog = ColumnChoiceDialog(event, self)
+        self.column_dialog = dialog
+        self.status.setText("Waiting for a column choice...")
+        self.append_message(
+            f"{Path(event['source']).name}: choose the {event['quantity']} column.",
+            "#a65b00",
+        )
+
+        def reply(result: int) -> None:
+            """Publish an atomic reply or cancel; preview values remain in memory."""
+            if self.column_dialog is not dialog:
+                dialog.deleteLater()
+                return
+            self.column_dialog = None
+            if result != QDialog.DialogCode.Accepted:
+                if not self.stop_reason:
+                    self.cancel()
+            elif self.workspace is not None and not self.stop_reason:
+                root = Path(self.workspace.name)
+                target = root / f"column-choice-{int(event['request_id'])}.json"
+                temporary = target.with_suffix(".tmp")
+                try:
+                    temporary.write_text(
+                        json.dumps(dialog.selection()), encoding="utf-8"
+                    )
+                    temporary.replace(target)
+                    self.status.setText("Continuing processing...")
+                except OSError as error:
+                    self.cancel()
+                    self.stop_reason = f"Could not apply column choice: {error}"
+                    self.append_message(self.stop_reason, "#b42318")
+            dialog.deleteLater()
+
+        dialog.finished.connect(reply)
+        dialog.show()
 
     def append_message(self, text: str, color: str = "#222222") -> None:
         """Append diagnostic text in a semantic color without interpreting HTML.
@@ -854,7 +913,7 @@ class MainWindow(QMainWindow):
             return
         elapsed = int(time.monotonic() - self.started_at)
         self.memory_label.setText(
-            f"Elapsed {elapsed // 60}:{elapsed % 60:02d} · "
+            f"Elapsed {elapsed // 60}:{elapsed % 60:02d} Â· "
             f"Worker {used / 1024**2:.0f} / {self.memory_limit / 1024**2:.0f} MB"
         )
         if not self.stop_reason and (
@@ -873,7 +932,9 @@ class MainWindow(QMainWindow):
         self.stop_reason = "Cancelled. Already saved outputs are retained."
         (Path(self.workspace.name) / "cancel").touch()
         self.cancel_button.setEnabled(False)
-        self.status.setText("Cancelling…")
+        if self.column_dialog is not None:
+            self.column_dialog.reject()
+        self.status.setText("Cancellingâ€¦")
         QTimer.singleShot(3000, self.kill_if_running)
 
     def kill_if_running(self) -> None:
@@ -894,6 +955,10 @@ class MainWindow(QMainWindow):
         """Drain events, clean temporary files and make the window usable again."""
         self.read_events()
         self.read_diagnostics()
+        if self.column_dialog is not None:
+            dialog = self.column_dialog
+            self.column_dialog = None
+            dialog.reject()
         self.timer.stop()
         if self.guard is not None:
             self.guard.close()
@@ -920,7 +985,7 @@ class MainWindow(QMainWindow):
             self.progress.setValue(0)
         elif exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit:
             self.progress.setValue(100)
-            self.status.setText(f"Complete — {self.saved} output file(s) saved.")
+            self.status.setText(f"Complete â€” {self.saved} output file(s) saved.")
             self.status.setStyleSheet("color: #16723c;")
         else:
             self.progress.setValue(0)

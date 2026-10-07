@@ -4,18 +4,18 @@ build-backend = "hatchling.build"
 
 [project]
 name = "battread-gui"
-version = "0.1.0"
+version = "0.1.2"
 description = "Local Windows desktop interface for battread."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE", "licenses/*.txt"]
 authors = [{name = "Alessandro Gregucci"}]
-dependencies = ["battread>=0.1.0,<0.2", "PySide6>=6.8,<7", "psutil>=6,<8"]
+dependencies = ["battread>=0.1.2,<0.2", "PySide6>=6.8,<7", "psutil>=6,<8"]
 
 [project.optional-dependencies]
-biologic = ["battread[biologic]>=0.1.0,<0.2"]
-neware = ["battread[neware]>=0.1.0,<0.2"]
+biologic = ["battread[biologic]>=0.1.2,<0.2"]
+neware = ["battread[neware]>=0.1.2,<0.2"]
 dev = ["pytest>=8", "ruff>=0.11", "pyright[nodejs]>=1.1.400", "pandas-stubs>=2.2.3"]
 build = ["PyInstaller==6.22.3", "build>=1.2.2", "hatchling>=1.27", "editables>=0.5"]
 

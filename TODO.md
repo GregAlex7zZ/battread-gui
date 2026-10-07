@@ -5,7 +5,7 @@
 - [ ] Test the Windows package on more PCs, including one without Python installed.
 - [ ] Test larger files and difficult output destinations, including full disks.
 - [ ] Consider parallel processing only after measuring speed and total RAM use.
-- [ ] Add a column-selection dialog for unusual or ambiguous inputs.
+- [ ] Extend explicit selection to unidentified labels and advanced capacity semantics.
 - [ ] Consider an installer and signed releases if people start using the app.
 
 ## Maintenance

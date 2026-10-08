@@ -290,3 +290,28 @@ def test_worker_errors_and_warnings_identify_the_input(app, tmp_path):
     assert str(invalid) in window.details.toPlainText()
     assert "NonMonotonicTimeError" in window.details.toPlainText()
     window.close()
+
+
+def test_interface_symbols_are_not_mojibake(app, tmp_path):
+    """Check displayed controls and Help after a regression in UTF-8 decoding."""
+    window = MainWindow()
+    try:
+        window.append_files([tmp_path / "sample.csv"])
+        button = window.table.cellWidget(0, 2)
+        assert isinstance(button, QPushButton)
+        assert button.text() == "\u00d7"
+        assert window.up.text() == "\u2191  Move up"
+        assert window.down.text() == "\u2193  Move down"
+        assert window.browse.text() == "Browse\u2026"
+        dialog = window.help_dialog()
+        try:
+            browser = dialog.findChild(QTextBrowser)
+            assert browser is not None
+            text = browser.toPlainText()
+            assert "Orange \u2014 warning:" in text
+            assert "Green \u2014 saved:" in text
+            assert "Red \u2014 error:" in text
+        finally:
+            dialog.close()
+    finally:
+        window.close()

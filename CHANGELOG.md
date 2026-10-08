@@ -2,6 +2,8 @@
 
 ## 0.1.2 (Unreleased)
 
+- Fix corrupted Unicode symbols in controls, Help and progress messages.
+
 - Pause on ambiguous columns, show bounded examples and resume with an explicit choice.
 - Preserve already saved files; support cancellation and source-change checks during selection.
 - Use the general CSV Total Time preference from battread 0.1.2.

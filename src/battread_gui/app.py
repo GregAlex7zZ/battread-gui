@@ -150,11 +150,11 @@ would replace an input, the displayed name adds <b>_standardized</b> to protect 
 <p>5. Click <b>Process</b>. Existing files are never overwritten. Name conflicts
 are resolved automatically as name (2).csv, name (3).csv, and so on.</p>
 <h3>Message colors</h3>
-<p><span style="color:#a65b00"><b>Orange â€” warning:</b></span> a non-blocking
+<p><span style="color:#a65b00"><b>Orange — warning:</b></span> a non-blocking
 data-quality issue. Processing continues; inspect the affected data before use.
 Missing scientific values remain missing; success does not resolve the warning.</p>
-<p><span style="color:#16723c"><b>Green â€” saved:</b></span> the output was saved
-successfully. <span style="color:#b42318"><b>Red â€” error:</b></span> processing
+<p><span style="color:#16723c"><b>Green — saved:</b></span> the output was saved
+successfully. <span style="color:#b42318"><b>Red — error:</b></span> processing
 cannot continue. Previously saved separate outputs remain available.</p>
 <p>Selected file size is measured from file metadata before processing. It is
 not a prediction of peak RAM or output/temporary disk requirements.</p>
@@ -265,8 +265,8 @@ class MainWindow(QMainWindow):
         settings_layout.setSpacing(12)
         buttons = QVBoxLayout()
         buttons.addStretch()
-        self.up = QPushButton("â†‘  Move up")
-        self.down = QPushButton("â†“  Move down")
+        self.up = QPushButton("↑  Move up")
+        self.down = QPushButton("↓  Move down")
         self.up.clicked.connect(self.move_up)
         self.down.clicked.connect(self.move_down)
         buttons.addWidget(self.up)
@@ -324,7 +324,7 @@ class MainWindow(QMainWindow):
         self.folder = QLineEdit()
         self.folder.setPlaceholderText("Choose a folder for standardized files")
         output_row.addWidget(self.folder, 1)
-        self.browse = QPushButton("Browseâ€¦")
+        self.browse = QPushButton("Browse…")
         self.browse.clicked.connect(self.choose_folder)
         output_row.addWidget(self.browse)
         self.format_box = QComboBox()
@@ -341,7 +341,7 @@ class MainWindow(QMainWindow):
         self.table.itemChanged.connect(self.update_preview)
         layout.addWidget(self.settings, 1)
 
-        self.status = QLabel("Ready â€” add files to begin.")
+        self.status = QLabel("Ready — add files to begin.")
         self.status.setWordWrap(True)
         self.status.hide()
         layout.addWidget(self.status)
@@ -389,7 +389,7 @@ class MainWindow(QMainWindow):
         about = QTextBrowser()
         about.setOpenExternalLinks(True)
         about.setHtml(
-            "<h2>battread GUI</h2><p>Copyright Â© 2026 Alessandro Gregucci.</p>"
+            "<h2>battread GUI</h2><p>Copyright © 2026 Alessandro Gregucci.</p>"
             "<p>Licensed under GNU GPL version 3 or later, as is battread.</p>"
             '<p><a href="https://github.com/GregAlex7zZ/battread/blob/main/AUTHORS.md">'
             "Authorship</a></p>"
@@ -458,7 +458,7 @@ class MainWindow(QMainWindow):
 
     def set_remove_button(self, row: int) -> None:
         """Bind the row's X to its input identity, avoiding stale reordered indices."""
-        button = QPushButton("Ã—")  # noqa: RUF001 - conventional close glyph.
+        button = QPushButton("×")  # noqa: RUF001 - conventional close glyph.
         button.setObjectName("removeFile")
         button.setToolTip("Remove this file")
         button.setAccessibleName(f"Remove {self.paths[row].name}")
@@ -552,9 +552,9 @@ class MainWindow(QMainWindow):
             if size < 1024 or unit == "TB":
                 break
             size /= 1024
-        message = f"{len(self.paths)} file(s) Â· {size:.1f} {unit}"
+        message = f"{len(self.paths)} file(s) · {size:.1f} {unit}"
         if unavailable:
-            message += f" Â· size unavailable for {unavailable} file(s)"
+            message += f" · size unavailable for {unavailable} file(s)"
         self.size_label.setText(message)
 
     def fit_controls(self) -> None:
@@ -763,7 +763,7 @@ class MainWindow(QMainWindow):
         # free-memory amounts and prevent use of the requested percentage.
         self.reserve = max(1, job.memory_limit // 9)
         self.progress.setRange(0, 0)
-        self.status.setText("Starting workerâ€¦")
+        self.status.setText("Starting worker…")
         self.status.setStyleSheet("color: #222222;")
         self.status.show()
         executable, arguments = worker_command(self.workspace.name)
@@ -824,11 +824,11 @@ class MainWindow(QMainWindow):
         self.last_phase = phase
         detail = ""
         if "file" in event:
-            detail += f" Â· file {event['file']} of {event['files']}"
+            detail += f" · file {event['file']} of {event['files']}"
         if "rows" in event:
-            detail += f" Â· {int(event['rows']):,} rows"
+            detail += f" · {int(event['rows']):,} rows"
         if percentage is not None:
-            detail += f" Â· {percentage}%"
+            detail += f" · {percentage}%"
         self.status.setText(phase + detail)
 
     def show_column_choice(self, event: dict[str, Any]) -> None:
@@ -913,7 +913,7 @@ class MainWindow(QMainWindow):
             return
         elapsed = int(time.monotonic() - self.started_at)
         self.memory_label.setText(
-            f"Elapsed {elapsed // 60}:{elapsed % 60:02d} Â· "
+            f"Elapsed {elapsed // 60}:{elapsed % 60:02d} · "
             f"Worker {used / 1024**2:.0f} / {self.memory_limit / 1024**2:.0f} MB"
         )
         if not self.stop_reason and (
@@ -934,7 +934,7 @@ class MainWindow(QMainWindow):
         self.cancel_button.setEnabled(False)
         if self.column_dialog is not None:
             self.column_dialog.reject()
-        self.status.setText("Cancellingâ€¦")
+        self.status.setText("Cancelling…")
         QTimer.singleShot(3000, self.kill_if_running)
 
     def kill_if_running(self) -> None:
@@ -985,7 +985,7 @@ class MainWindow(QMainWindow):
             self.progress.setValue(0)
         elif exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit:
             self.progress.setValue(100)
-            self.status.setText(f"Complete â€” {self.saved} output file(s) saved.")
+            self.status.setText(f"Complete — {self.saved} output file(s) saved.")
             self.status.setStyleSheet("color: #16723c;")
         else:
             self.progress.setValue(0)
